@@ -109,7 +109,7 @@ if __name__ == "__main__":
     logging.info(str(args))
 
 
-    def create_model(name='vnet'):  # 实例化模型
+    def create_model(name='vnet'):  
         # Network definition
         if name == 'vnet':
             net = VNet(n_channels=1, n_classes=num_classes, normalization='batchnorm', has_dropout=True)
@@ -122,39 +122,39 @@ if __name__ == "__main__":
 
     model_vnet = create_model(name='vnet')
     model_resnet = create_model(name='resnet34')
-#################################  LA数据级
-    # db_train = LAHeart(base_dir=train_data_path,
-    #                    split='train',
-    #                    train_flod="train4.list",  # todo change training flod
-    #                    common_transform=transforms.Compose([  # comon_transform公共变换
-    #                        RandomCrop(patch_size),
-    #                    ]),
-    #                    sp_transform=transforms.Compose([
-    #                        ToTensor(),
-    #                    ]))
-    # # 有标签的索引是【0，15】
-    # labeled_idxs = list(range(16))  # todo set labeled num
-    # # 无标签的索引是[16,79]
-    # unlabeled_idxs = list(range(16, 80))  # todo set labeled num all_sample_num
-    # labeled_idxs = list(range(12))           # todo set labeled num
-    # #无标签的索引是[16,79]
-    # unlabeled_idxs = list(range(12, 61))   
+
+    db_train = LAHeart(base_dir=train_data_path,
+                       split='train',
+                       train_flod="train4.list",  # todo change training flod
+                       common_transform=transforms.Compose([  # comon_transform
+                           RandomCrop(patch_size),
+                       ]),
+                       sp_transform=transforms.Compose([
+                           ToTensor(),
+                       ]))
+  
+    labeled_idxs = list(range(16))  # todo set labeled num
+  
+    unlabeled_idxs = list(range(16, 80))  # todo set labeled num all_sample_num
+    labeled_idxs = list(range(12))           # todo set labeled num
+  
+    unlabeled_idxs = list(range(12, 61))   
 
     
     
     
-####################### bra数据集
-    db_train = BraTS2019(base_dir='dataset/data',
-                   split='train',
-                   num=None,
-                   transform=transforms.Compose([
-                       RandomRotFlip(),
-                       RandomCrop(patch_size),
-                       ToTensor(),
-                   ]))
-    labeled_idxs,unlabeled_idxs = list(range(50)) , list(range(50, 250)) 
+####################### bra dataset
+    # db_train = BraTS2019(base_dir='dataset/data',
+    #                split='train',
+    #                num=None,
+    #                transform=transforms.Compose([
+    #                    RandomRotFlip(),
+    #                    RandomCrop(patch_size),
+    #                    ToTensor(),
+    #                ]))
+    # labeled_idxs,unlabeled_idxs = list(range(50)) , list(range(50, 250)) 
   
-#####################这定义采样策略
+
     batch_sampler = TwoStreamBatchSampler(labeled_idxs, unlabeled_idxs, batch_size, batch_size - labeled_bs)
 
     trainloader = DataLoader(db_train, batch_sampler=batch_sampler, num_workers=4, pin_memory=True,
@@ -209,23 +209,21 @@ if __name__ == "__main__":
             else:
                 Good_student = 1
 
-            ###DCR    模块
+            ###DTCR  
             v_outputs_soft2 = F.softmax(v_outputs, dim=1)
             r_outputs_soft2 = F.softmax(r_outputs, dim=1)
-            v_predict = torch.max(v_outputs_soft2[:labeled_bs, :, :, :, :], 1, )[1]   #troch.max()[1]， 只返回最大值的每个索引
+            v_predict = torch.max(v_outputs_soft2[:labeled_bs, :, :, :, :], 1, )[1]   #troch.max()[1]
             r_predict = torch.max(r_outputs_soft2[:labeled_bs, :, :, :, :], 1, )[1]
-            diff_mask = ((v_predict == 1) ^ (r_predict == 1)).to(torch.int32)# 不同区域的掩码
+            diff_mask = ((v_predict == 1) ^ (r_predict == 1)).to(torch.int32)      #Masks for different prediction regions
 
-            ##假设相同预测区域掩码为same_mask   v_outdis
-            same_mask = ~diff_mask
-            ####  ----------实验(1)开始：对相同区域执行像素级别校正
-
-
+         
+            same_mask = ~diff_mask                                                #Masks for same prediction regions
+        
             v_dis_predict_mask = torch.sigmoid(-1500*v_outdis)
             r_dis_predict_mask = torch.sigmoid(-1500*r_outdis)
             v_dis_predict_mask22 = torch.sigmoid(-1500*v_outdis[:labeled_bs, :, :, :, :])
             r_dis_predict_mask22 = torch.sigmoid(-1500*r_outdis[:labeled_bs, :, :, :, :])
-            # 校正损失
+            
             v_mse_dist = consistency_criterion(v_outputs_soft2[:labeled_bs, 1, :, :, :], v_label[:labeled_bs])
             r_mse_dist = consistency_criterion(r_outputs_soft2[:labeled_bs, 1, :, :, :], r_label[:labeled_bs])
             v_mse_dis_dist = torch.mean((v_dis_predict_mask22 - v_outputs_soft[:labeled_bs, :, :, :, :]) ** 2)
@@ -237,20 +235,19 @@ if __name__ == "__main__":
             r_mse = torch.sum(diff_mask * r_mse_dist) / (torch.sum(diff_mask) + 1e-16)
 
 
-            #距离变换图
+            
             v_dis_to_mask = torch.sigmoid(-1500 * v_outdis)
             v_loss_dis_dice = losses.dice_loss(v_dis_to_mask[:labeled_bs, 1, :, :, :], v_label[:labeled_bs] == 1)
             r_dis_to_mask = torch.sigmoid(-1500 * r_outdis)
             r_loss_dis_dice = losses.dice_loss(r_dis_to_mask[:labeled_bs, 1, :, :, :], r_label[:labeled_bs] == 1)
 
-            ###监督损失
             # v_supervised_loss = (v_loss_seg + v_loss_seg_dice+v_loss_dis_dice) + 0.5* v_mse+0.5*v_mse_dis
             # r_supervised_loss = (r_loss_seg + r_loss_seg_dice+r_loss_dis_dice) + 0.5* r_mse+0.5*r_mse_dis
  
             v_supervised_loss = (v_loss_seg + v_loss_seg_dice+v_loss_dis_dice) + 0.5*v_mse
             r_supervised_loss = (r_loss_seg + r_loss_seg_dice+r_loss_dis_dice) + 0.5*r_mse
            
-            # 动态伪标签生成算法
+        
             v_outputs_clone = v_outputs_soft[labeled_bs:, :, :, :, :].clone().detach()
             r_outputs_clone = r_outputs_soft[labeled_bs:, :, :, :, :].clone().detach()
             v_outputs_clone1 = torch.pow(v_outputs_clone, 1 / T)
@@ -259,18 +256,19 @@ if __name__ == "__main__":
             r_outputs_clone2 = torch.sum(r_outputs_clone1, dim=1, keepdim=True)
             v_outputs_PLable = torch.div(v_outputs_clone1, v_outputs_clone2)
             r_outputs_PLable = torch.div(r_outputs_clone1, r_outputs_clone2)
-            # 选择伪标签生成器
+          
             if Good_student == 0:
                 Plabel = v_outputs_PLable
             if Good_student == 1:
                 Plabel = r_outputs_PLable
-            # 权重更新策略
+                
+               #Weight update strategy
             consistency_weight = get_current_consistency_weight(iter_num // 150)
 
-            # 计算一致性损失，利用 无标签数据
+             #Calculate consistency loss by unlabeled data
             if Good_student == 0:
-                _,outputs_r = model_resnet(inputs_r_noise)  # 无标记数据+噪声过A网
-                outputs_r = transforms_back_rot(outputs_r, r_rot_mask, r_flip_mask)  # B网输出后进行旋转变化
+                _,outputs_r = model_resnet(inputs_r_noise)  
+                outputs_r = transforms_back_rot(outputs_r, r_rot_mask, r_flip_mask)  
                 r_consistency_dist = 0.35*losses.softmax_mse_loss_three(outputs_r, r_outputs_soft[labeled_bs:, :, :, :, :],v_outputs_PLable)
                 #r_consistency_dist = 0.5*losses.softmax_mse_loss_three(outputs_r, r_outputs_soft[labeled_bs:, :, :, :, :],v_outputs_PLable)
                 #r_consistency_dist = consistency_criterion  ( r_outputs_soft[labeled_bs:, :, :, :, :],v_outputs_PLable)
@@ -278,16 +276,16 @@ if __name__ == "__main__":
                 r_consistency_dist = torch.sum(r_consistency_dist) / (b * c * w * h * d)
                 r_consistency_loss = r_consistency_dist
                 v_cross_task_dist = torch.mean((v_dis_to_mask - v_outputs_soft) ** 2)
-                ##回归任务损失
+               
                 r_loss_dis_dice = losses.dice_loss(r_dis_to_mask[labeled_bs:, 1, :, :, :], r_label[labeled_bs:] == 1)
-                # r网络上的  双任务损失
+           
                 r_cross_task_dist = torch.mean((r_dis_to_mask - r_outputs_soft) ** 2)
                 v_loss = v_supervised_loss+v_cross_task_dist*consistency_weight
                 r_loss = r_supervised_loss+consistency_weight * (r_loss_dis_dice+r_consistency_loss+r_cross_task_dist)
                 writer.add_scalar('loss/r_consistency_loss', r_consistency_loss, iter_num)
             if Good_student == 1:
-                _,outputs_v = model_resnet(inputs_v_noise)  # 无标记数据+噪声过A网
-                outputs_v = transforms_back_rot(outputs_v, v_rot_mask, v_flip_mask)  # B网输出后进行旋转变化
+                _,outputs_v = model_resnet(inputs_v_noise)  
+                outputs_v = transforms_back_rot(outputs_v, v_rot_mask, v_flip_mask)  
                 v_consistency_dist = 0.35*losses.softmax_mse_loss_three(outputs_v, v_outputs_soft[labeled_bs:, :, :, :, :],r_outputs_PLable)
                 #v_consistency_dist = consistency_criterion( v_outputs_soft[labeled_bs:, :, :, :, :],r_outputs_PLable)
                 b, c, w, h, d = v_consistency_dist.shape
@@ -295,7 +293,6 @@ if __name__ == "__main__":
                 v_consistency_loss = v_consistency_dist
                 v_loss_dis_dice = losses.dice_loss(v_dis_to_mask[labeled_bs:, 1, :, :, :], v_label[labeled_bs:] == 1)
                 v_cross_task_dist = torch.mean((v_dis_to_mask - v_outputs_soft) ** 2)
-                # r网络上的  双任务损失
                 r_cross_task_dist = torch.mean((r_dis_to_mask - r_outputs_soft) ** 2)
                 v_loss = v_supervised_loss + consistency_weight * (v_loss_dis_dice+v_consistency_loss+v_cross_task_dist)
                 r_loss = r_supervised_loss+r_cross_task_dist*consistency_weight
