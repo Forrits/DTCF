@@ -6,8 +6,8 @@ import itertools
 from torch.utils.data.sampler import Sampler
 from PIL import ImageFilter
 
-class Pancreas(Dataset):      ##自定义数据集的类
-    """ Pancreas Dataset """
+class LAHeart(Dataset):      ##自定义数据集的类
+    """ LA Dataset """
     def __init__(self, base_dir=None, split='train',train_flod=None, common_transform=None,sp_transform=None):
         self._base_dir = base_dir
         self.common_transform = common_transform           #全部裁剪
@@ -15,7 +15,7 @@ class Pancreas(Dataset):      ##自定义数据集的类
         self.sample_list = []        
         print(train_flod)
         if split=='train':                                  
-            with open(self._base_dir+'/Pancreas/Flods/'+train_flod, 'r') as f:
+            with open(self._base_dir+'/LA/Flods/'+train_flod, 'r') as f:
                 #f.lines()读取文件所有行保存在一个list中，每一个元素代表一行
                 self.image_list = f.readlines()
                 #以train0为例子，此时image_list就是train0中的所有内容   
@@ -30,7 +30,7 @@ class Pancreas(Dataset):      ##自定义数据集的类
     def __getitem__(self, idx):   #根据下标找到数据
         image_name = self.image_list[idx]
         #创建数据集
-        h5f = h5py.File(self._base_dir+"/"+"pancreas_data/"+image_name, 'r')
+        h5f = h5py.File(self._base_dir+"/"+"LA_data/"+image_name+"/mri_norm2.h5", 'r')
         image = h5f['image'][:]
         label = h5f['label'][:]
         sample = {'image': image, 'label': label}      
@@ -187,8 +187,8 @@ class TwoStreamBatchSampler(Sampler):
     def __init__(self, primary_indices, secondary_indices, batch_size, secondary_batch_size):
         self.primary_indices = primary_indices   #有标签的索引
         self.secondary_indices = secondary_indices  #无标签的索引
-        self.secondary_batch_size = secondary_batch_size
-        self.primary_batch_size = batch_size - secondary_batch_size
+        self.secondary_batch_size = secondary_batch_size  # 无标记数据的批 大小写
+        self.primary_batch_size = batch_size - secondary_batch_size  # 标记数据的批2大小
 
         assert len(self.primary_indices) >= self.primary_batch_size > 0
         assert len(self.secondary_indices) >= self.secondary_batch_size > 0
