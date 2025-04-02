@@ -14,9 +14,9 @@ Please change the database path and data partition file in the corresponding cod
 [LA data](https://drive.google.com/drive/folders/1_LObmdkxeERWZrAzXDOhOJ0ikNEm0l_l?usp=sharing)  
 [Pancreas data](https://drive.google.com/drive/folders/1kQX8z34kF62ZF_1-DqFpIosB4zDThvPz?usp=sharing)
 ### Training
-`pyhon train.py`
+`pyhon train_DTCF.py`
 ### Evaluation
-`pyhon test.py`
+`pyhon test_DTCF.py`
 
 ## Acknowledgement
 We build the project based on UA-MT,SASSNet,DTC,MCF
